@@ -3,37 +3,40 @@
 package socdesign
 
 import chisel3._
-import chisel3.util.{Decoupled, DecoupledIO, Enum, ReadyValidIO, log2Up}
-
-class MainGEMMCtrl(addrWidth: Int) extends Bundle {
-  val start = Input(Bool())
-  val cmd = Input(new MainGEMMCmd(addrWidth))
-  val finished = Output(Bool())
-}
+import chisel3.util.{Decoupled, DecoupledIO, Enum, ReadyValidIO, log2Up, Cat}
 
 class MainGEMMCmd(addrWidth: Int) extends Bundle {
-  val a_addr = Input(UInt(addrWidth.W))
-  val b_addr = Input(UInt(addrWidth.W))
-  val c_addr = Input(UInt(addrWidth.W))
-  val m = Input(UInt(addrWidth.W))
-  val n = Input(UInt(addrWidth.W))
-  val k = Input(UInt(addrWidth.W))
+  val a_addr = UInt(addrWidth.W)
+  val b_addr = UInt(addrWidth.W)
+  val c_addr = UInt(addrWidth.W)
+  val m = UInt(addrWidth.W)
+  val n = UInt(addrWidth.W)
+  val k = UInt(addrWidth.W)
+
+  override def cloneType = new MainGEMMCmd(addrWidth).asInstanceOf[this.type]
 }
 
 class MainGEMMMemReadChannel(addrWidth: Int, dataWidth: Int) extends Bundle {
-  val ctrl = Output(Decoupled(UInt(addrWidth.W))) // TODO: may need smarter mem
-  val data = Input(Decoupled(UInt(dataWidth.W)))
+  val ctrl = Decoupled(UInt(addrWidth.W)) // TODO: may need smarter mem
+  val data = Flipped(Decoupled(UInt(dataWidth.W)))
+
+  override def cloneType = new MainGEMMMemReadChannel(addrWidth, dataWidth).asInstanceOf[this.type]
 }
 
-class MainGEMMMemWriteChannel(addrWidth: Int, dataWidth: Int) extends Bundle {
-  val ctrl = Output(Decoupled(UInt(addrWidth.W)))
-  val data = Output(Decoupled(UInt(dataWidth.W)))
+class AddrDataBundle(addrWidth: Int, dataWidth: Int) extends Bundle {
+  val addr = UInt(addrWidth.W)
+  val data = UInt(dataWidth.W)
+
+  override def cloneType = new AddrDataBundle(addrWidth, dataWidth).asInstanceOf[this.type]
 }
 
 class MainGEMMMemIo(addrWidth: Int, indataWidth: Int, outdataWidth: Int) extends Bundle {
   val a = new MainGEMMMemReadChannel(addrWidth, indataWidth)
   val b = new MainGEMMMemReadChannel(addrWidth, indataWidth)
-  val c = new MainGEMMMemWriteChannel(addrWidth, outdataWidth)
+  val c = Decoupled(new AddrDataBundle(addrWidth, outdataWidth))
+
+  override def cloneType = new MainGEMMMemIo(addrWidth, indataWidth, outdataWidth).asInstanceOf[this.type]
+
 }
 
 // Note: requires m, n, k to be multiples of bWidth/aPack
@@ -42,20 +45,24 @@ class MainGEMM extends Module {
   val addrWidth = 32 // Width of addresses
   val indataWidth = 16 // Width of input data
   val outdataWidth = 32 // Width of output data
-  val aLength = 2048 // Maximum length of a row of A
-  val bcLength = 2048 // Maximum length of a row of B/C, very cheap to increase
+  val aLength = 2048 // Maximum length of a row of A, max K
+  val bcLength = 2048 // Maximum length of a row of B/C, very cheap to increase, max N
   val acHeight = 16 // Number of rows of A/C we hold at once
   val bWidth = 16 // Number of elements of B we read in at once, probably should match dramWidth/indataWidth
-  val outMaxHeight = 2048 // Maximum number of rows of A/C, very cheap to increase
+  val outMaxHeight = 2048 // Maximum number of rows of A/C, very cheap to increase, max M
   val dramWidth = 256 // Width of channel from memory, used to figure out SIMD-esque length
-  val aPack = dramWidth / indataWidth
+  val aPack = dramWidth / indataWidth // how may elements of a are packed together
+  val numCs = acHeight * bWidth * outdataWidth / dramWidth // how many packings of C there are, to write out
+  val cpr = bWidth * outdataWidth / dramWidth // how many C packings per row, needed for C addr generation
   assert(aPack == bWidth) // TODO: this probably could be loosened
 
   // TODO: might need to do packing of data to make sure fits in BRAMs
   // TODO: the halving-quartering-&c of effective bWidth to get taller
 
   val io = IO(new Bundle {
-    val ctrl = new MainGEMMCtrl(addrWidth)
+    val ctrl_start = Input(Bool())
+    val ctrl_cmd = Input(new MainGEMMCmd(addrWidth))
+    val ctrl_finished = Output(Bool())
     val mem = new MainGEMMMemIo(addrWidth, dramWidth, dramWidth) // dram Width, do Vec trasform internnally
   })
 
@@ -74,11 +81,18 @@ class MainGEMM extends Module {
   val bRead = Wire(Vec(bWidth, UInt(indataWidth.W)))
   val bReadValid = Wire(Bool())
   val bReadReady = Wire(Bool())
+  val cWrite = Wire(UInt(dramWidth.W))
+  val cWriteValid = Wire(Bool())
+  val cWriteReady = Wire(Bool())
 
   {
     bRead := b
     bReadValid := io.mem.b.data.valid
-    io.mem.b.data.ready := bReadReady // TODO: wtf is thsi things problem
+    io.mem.b.data.ready := bReadReady
+
+    io.mem.c.bits.data := cWrite
+    cWriteReady := io.mem.c.ready
+    io.mem.c.valid := cWriteValid
   }
 
   val cReg = Seq.fill(acHeight) {
@@ -94,6 +108,9 @@ class MainGEMM extends Module {
   val bRowProgress = RegInit(0.U(log2Up(outMaxHeight).W)) // progress in terms of how many rows of B
   val bColProgress = RegInit(0.U(log2Up(bcLength).W)) // progress in terms of how many columns of B we have done
 
+  val cProgress = RegInit(0.U(log2Up(acHeight * bWidth * outdataWidth / dramWidth).W))
+  val cAddr     = Reg(UInt(addrWidth.W))
+
   val s_idle :: s_reload_a :: s_calc :: s_out :: s_finish :: Nil = Enum(5)
   val state = RegInit(s_idle)
 
@@ -108,23 +125,22 @@ class MainGEMM extends Module {
 
   // Defaults
   {
-    io.ctrl.finished := false.B
+    io.ctrl_finished := false.B
     io.mem.a.data.ready := false.B
     bReadReady := false.B
-    io.mem.c.data.valid := false.B
+    cWriteValid := false.B
   }
-
-  // TODO: maybe just have the memory address generation seperate, so this stuff only worries about trackig elements
-
 
   val cmd = Reg(new MainGEMMCmd(addrWidth))
 
   when(state === s_idle) {
-    when(io.ctrl.start) {
+    when(io.ctrl_start) {
       state := s_reload_a
       rowProgress := 0.U
       aProgress := 0.U
-      cmd := io.ctrl.cmd
+      aRowProgress := 0.U
+      cmd := io.ctrl_cmd
+      cAddr := io.ctrl_cmd.c_addr
     }
   }
 
@@ -139,7 +155,7 @@ class MainGEMM extends Module {
       aProgress := aProgress + aPack.U
 
       // new row of A
-      when(aProgress === (cmd.m - 1.U)) { // TODO: Check is M
+      when(aProgress === (cmd.k - aPack.U)) {
         aRowProgress := aRowProgress + 1.U
         aProgress := 0.U
 
@@ -161,41 +177,73 @@ class MainGEMM extends Module {
           cReg(i)(j) := cReg(i)(j) + (a(i) * b(j))
         }
       }
-      bRowProgress := bRowProgress + 1.U
+      bRowProgress := bRowProgress + 1.U // used for a as well
     }
 
-    // TODO stuff done
-    {
+    when(bRowProgress === cmd.k - 1.U) {
       state := s_out
+      cProgress := 0.U
     }
   }
+
+  val cBundles = Wire(Vec(numCs, UInt(dramWidth.W)))
+  cBundles := VecInit(cReg.flatten.grouped(dramWidth / outdataWidth).map { a => Cat(a.reverse) }.toSeq)
+  cWrite := cBundles(cProgress)
 
   when(state === s_out) {
-    // TODO write out C, do the zeroing of it too?
+    cWriteValid := true.B
 
-    // TODO normal done with colset
-    {
-      bRowProgress := 0.U
-      bColProgress := bColProgress + bWidth.U
-    }
+    when(cWriteReady) {
+      cProgress := cProgress + 1.U
+      when((cProgress + 1.U) % cpr.U === 0.U) { // new row of C,
+        cAddr := cAddr + (cmd.n * (outdataWidth / 8).U) - ((cpr - 1) * dramWidth / 8).U
+      } .otherwise { // just next elemet i row of C
+        cAddr := cAddr + (dramWidth / 8).U
+      }
 
-    // TODO done with rowset
-    {
-      rowProgress := rowProgress + acHeight.U
+      when(cProgress === (numCs - 1).U) { // done with a colset of B
+        bRowProgress := 0.U
+        bColProgress := bColProgress + bWidth.U
 
-      bRowProgress := 0.U
-      bColProgress := 0.U
+        cAddr := cAddr - cmd.n * ((acHeight - 1) * dramWidth / 8).U + (dramWidth / 8).U
 
-      aProgress := 0.U
-      aRowProgress := 0.U
+        cReg.foreach { //  zero entirety of C
+          _.foreach {
+            _ := 0.U
+          }
+        }
+        state := s_calc
 
-      state := s_reload_a
-    }
+        when (bColProgress === cmd.n - bWidth.U) { // done with a rowset of A
+          rowProgress := rowProgress + acHeight.U
 
-    // TODO check if completely done
-    {
-      state := s_finish
+          bRowProgress := 0.U
+          bColProgress := 0.U
+
+          cAddr := cAddr - cmd.n * (cmd.m - 1.U) * (dramWidth / 8).U + (dramWidth / 8).U
+
+          aProgress := 0.U
+          aRowProgress := 0.U
+
+          state := s_reload_a
+
+          when (rowProgress === cmd.m - acHeight.U) { // done done
+            state := s_finish
+          }
+        }
+      }
     }
   }
+
+  when (state === s_finish) {
+    io.ctrl_finished := true.B
+    state := s_idle
+  }
+
+  // TODO: a storage read/write
+
+  // TODO: b address generation
+
+  // TODO: check c address generation
 
 }
