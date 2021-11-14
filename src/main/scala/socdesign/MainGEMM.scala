@@ -103,13 +103,20 @@ class MainGEMM extends Module {
 
   val rowProgress = RegInit(0.U(log2Up(outMaxHeight).W)) // progress in terms of how many rows
   val aProgress = RegInit(0.U(log2Up(aLength).W)) // progress through row
+  val aProgressWire = Wire(UInt(log2Up(aLength).W)) // progress through row
+  aProgressWire := aProgress
   val aRowProgress = RegInit(0.U(log2Up(acHeight).W)) // progress through the acHeight number of rows
 
   val bRowProgress = RegInit(0.U(log2Up(outMaxHeight).W)) // progress in terms of how many rows of B
   val bColProgress = RegInit(0.U(log2Up(bcLength).W)) // progress in terms of how many columns of B we have done
 
   val cProgress = RegInit(0.U(log2Up(acHeight * bWidth * outdataWidth / dramWidth).W))
-  val cAddr     = Reg(UInt(addrWidth.W))
+  val aAddr = Reg(UInt(addrWidth.W))
+  val bAddr = Reg(UInt(addrWidth.W))
+  val bAddrRow = RegInit(0.U(log2Up(outMaxHeight).W))
+  val bAddrCol = RegInit(0.U(log2Up(bcLength).W))
+  val cAddr = Reg(UInt(addrWidth.W))
+  io.mem.c.bits.addr := cAddr
 
   val s_idle :: s_reload_a :: s_calc :: s_out :: s_finish :: Nil = Enum(5)
   val state = RegInit(s_idle)
@@ -127,8 +134,12 @@ class MainGEMM extends Module {
   {
     io.ctrl_finished := false.B
     io.mem.a.data.ready := false.B
+    aReadReady := false.B
     bReadReady := false.B
     cWriteValid := false.B
+
+    io.mem.a.ctrl.valid := false.B
+    io.mem.b.ctrl.valid := false.B
   }
 
   val cmd = Reg(new MainGEMMCmd(addrWidth))
@@ -140,18 +151,23 @@ class MainGEMM extends Module {
       aProgress := 0.U
       aRowProgress := 0.U
       cmd := io.ctrl_cmd
+      aAddr := io.ctrl_cmd.a_addr
+      bAddr := io.ctrl_cmd.b_addr
       cAddr := io.ctrl_cmd.c_addr
+
+      bAddrRow := 0.U
+      bAddrCol := 0.U
     }
   }
 
   when(state === s_reload_a) {
     io.mem.a.data.ready := true.B
-    for (i <- 0 until acHeight) {
-      when(aRowProgress === i.U) {
-        aStorage(i).write(aProgress, a)
+    when(io.mem.a.data.fire()) {
+      for (i <- 0 until acHeight) {
+        when(aRowProgress === i.U) {
+          aStorage(i).write(aProgressWire, a)
+        }
       }
-    }
-    when(io.mem.a.data.valid) {
       aProgress := aProgress + aPack.U
 
       // new row of A
@@ -197,7 +213,7 @@ class MainGEMM extends Module {
       cProgress := cProgress + 1.U
       when((cProgress + 1.U) % cpr.U === 0.U) { // new row of C,
         cAddr := cAddr + (cmd.n * (outdataWidth / 8).U) - ((cpr - 1) * dramWidth / 8).U
-      } .otherwise { // just next elemet i row of C
+      }.otherwise { // just next element in row of C
         cAddr := cAddr + (dramWidth / 8).U
       }
 
@@ -214,7 +230,7 @@ class MainGEMM extends Module {
         }
         state := s_calc
 
-        when (bColProgress === cmd.n - bWidth.U) { // done with a rowset of A
+        when(bColProgress === cmd.n - bWidth.U) { // done with a rowset of A
           rowProgress := rowProgress + acHeight.U
 
           bRowProgress := 0.U
@@ -227,7 +243,11 @@ class MainGEMM extends Module {
 
           state := s_reload_a
 
-          when (rowProgress === cmd.m - acHeight.U) { // done done
+          bAddr := cmd.b_addr
+          bAddrRow := 0.U
+          bAddrCol := 0.U
+
+          when(rowProgress === cmd.m - acHeight.U) { // done done
             state := s_finish
           }
         }
@@ -235,14 +255,36 @@ class MainGEMM extends Module {
     }
   }
 
-  when (state === s_finish) {
+  when(state === s_finish) {
     io.ctrl_finished := true.B
     state := s_idle
   }
 
   // TODO: a storage read/write
 
-  // TODO: b address generation
+  // A address gen
+  io.mem.a.ctrl.bits := aAddr
+  when(state =/= s_idle) {
+    io.mem.a.ctrl.valid := aAddr < (cmd.a_addr + (cmd.m * cmd.k * (indataWidth / 8).U)) // TODO: memoise?
+    when(io.mem.a.ctrl.fire()) {
+      aAddr := aAddr + dramWidth.U
+    }
+  }
+
+  // B address gen
+  io.mem.b.ctrl.bits := bAddr
+  when(state =/= s_idle) { // TODO: state?? should we wait for calc?
+    io.mem.b.ctrl.valid := bAddrCol < cmd.n
+    when(io.mem.b.ctrl.fire()) {
+      bAddr := bAddr + cmd.n * (indataWidth / 8).U
+      bAddrRow := bAddrRow + 1.U
+      when (bAddrRow === cmd.k - 1.U) {
+        bAddr := bAddr + (bWidth * indataWidth / 8).U - ((cmd.k - 1.U) * cmd.n * (indataWidth / 8).U)
+        bAddrRow := 0.U
+        bAddrCol := bAddrCol + 1.U
+      }
+    }
+  }
 
   // TODO: check c address generation
 
