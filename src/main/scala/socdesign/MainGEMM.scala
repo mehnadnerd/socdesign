@@ -260,7 +260,24 @@ class MainGEMM extends Module {
     state := s_idle
   }
 
-  // TODO: a storage read/write
+  // A storage read
+  // abuse the fact that multiple elements in each As
+  assert(aPack >= 2)
+  val aReadAddr = Wire(UInt(log2Up(aLength).W))
+  val aReadRaw = aStorage.map { a => a.read(aReadAddr) }
+  aReadAddr := bRowProgress / aPack.U
+  val aReadElem = bRowProgress % aPack.U
+
+  aReadRaw.zipWithIndex.foreach { case (a, i) => aRead(i) := a(aReadElem) }
+
+  aReadValid := false.B
+  when(state === s_calc) {
+    aReadValid := true.B // always true since we nset bRowProgress and hence aReadAddr a cycle before calc
+    when(bRowProgress % aPack.U === 0.U && aReadReady) {
+      // at end of aPack group
+      aReadAddr := bRowProgress / aPack.U + 1.U
+    }
+  }
 
   // A address gen
   io.mem.a.ctrl.bits := aAddr
@@ -278,7 +295,7 @@ class MainGEMM extends Module {
     when(io.mem.b.ctrl.fire()) {
       bAddr := bAddr + cmd.n * (indataWidth / 8).U
       bAddrRow := bAddrRow + 1.U
-      when (bAddrRow === cmd.k - 1.U) {
+      when(bAddrRow === cmd.k - 1.U) {
         bAddr := bAddr + (bWidth * indataWidth / 8).U - ((cmd.k - 1.U) * cmd.n * (indataWidth / 8).U)
         bAddrRow := 0.U
         bAddrCol := bAddrCol + 1.U
