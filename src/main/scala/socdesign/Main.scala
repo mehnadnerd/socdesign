@@ -10,3 +10,7 @@ object Main extends App {
 object FirrtlMain extends App {
   (new chisel3.stage.ChiselStage).emitFirrtl(new MainGEMM())
 }
+
+object MockTesterMain extends App {
+  (new chisel3.stage.ChiselStage).emitVerilog(new MockTester())
+}
