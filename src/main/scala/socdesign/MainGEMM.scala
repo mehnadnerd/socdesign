@@ -47,10 +47,10 @@ class MainGEMM extends Module {
   val outdataWidth = 32 // Width of output data
   val aLength = 2048 // Maximum length of a row of A, max K
   val bcLength = 2048 // Maximum length of a row of B/C, very cheap to increase, max N
-  val acHeight = 16 // Number of rows of A/C we hold at once
-  val bWidth = 16 // Number of elements of B we read in at once, probably should match dramWidth/indataWidth
+  val acHeight = 4//16 // Number of rows of A/C we hold at once
+  val bWidth = 4//16 // Number of elements of B we read in at once, probably should match dramWidth/indataWidth
   val outMaxHeight = 2048 // Maximum number of rows of A/C, very cheap to increase, max M
-  val dramWidth = 256 // Width of channel from memory, used to figure out SIMD-esque length
+  val dramWidth = 64//256 // Width of channel from memory, used to figure out SIMD-esque length
   val aPack = dramWidth / indataWidth // how may elements of a are packed together
   val numCs = acHeight * bWidth * outdataWidth / dramWidth // how many packings of C there are, to write out
   val cpr = bWidth * outdataWidth / dramWidth // how many C packings per row, needed for C addr generation
@@ -284,7 +284,7 @@ class MainGEMM extends Module {
   when(state =/= s_idle) {
     io.mem.a.ctrl.valid := aAddr < (cmd.a_addr + (cmd.m * cmd.k * (indataWidth / 8).U)) // TODO: memoise?
     when(io.mem.a.ctrl.fire()) {
-      aAddr := aAddr + dramWidth.U
+      aAddr := aAddr + (dramWidth / 8).U // step to next dramWidth-sized chunk. uses fact rows are right after another
     }
   }
 
@@ -293,10 +293,10 @@ class MainGEMM extends Module {
   when(state =/= s_idle) { // TODO: state?? should we wait for calc?
     io.mem.b.ctrl.valid := bAddrCol < cmd.n
     when(io.mem.b.ctrl.fire()) {
-      bAddr := bAddr + cmd.n * (indataWidth / 8).U
+      bAddr := bAddr + cmd.n * (indataWidth / 8).U // step one row down
       bAddrRow := bAddrRow + 1.U
       when(bAddrRow === cmd.k - 1.U) {
-        bAddr := bAddr + (bWidth * indataWidth / 8).U - ((cmd.k - 1.U) * cmd.n * (indataWidth / 8).U)
+        bAddr := bAddr + (bWidth * indataWidth / 8).U - ((cmd.k - 1.U) * cmd.n * (indataWidth / 8).U) // step 1 element over, then k rows ups
         bAddrRow := 0.U
         bAddrCol := bAddrCol + 1.U
       }
