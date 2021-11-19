@@ -10,12 +10,12 @@ class MockTester extends Module {
     val done = Output(Bool())
   })
 
-  val gemm = Module(new MainGEMM())
+  val gemm = Module(new MainGEMM(dramWidth = 64, acHeight = 4))
 
   gemm.io.ctrl_start := io.start
   io.done := gemm.io.ctrl_finished
 
-  val dramWidth = 256
+  val dramWidth = 128
   val ty = UInt(dramWidth.W)
   val elemSize = 16
   val elemPack = dramWidth / elemSize
@@ -25,18 +25,18 @@ class MockTester extends Module {
   gemm.io.mem.a.data <> aq.io.deq
   gemm.io.mem.b.data <> bq.io.deq
 
-  aq.io.enq <> gemm.io.mem.a.ctrl
-  aq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.a.ctrl.bits(15, 0) + i.U } reverse)
-  bq.io.enq <> gemm.io.mem.b.ctrl
-  bq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.b.ctrl.bits(15, 0) + i.U } reverse)
+  aq.io.enq <> gemm.io.mem.a.addr
+  aq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.a.addr.bits(15, 0) + i.U } reverse)
+  bq.io.enq <> gemm.io.mem.b.addr
+  bq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.b.addr.bits(15, 0) + i.U } reverse)
 
   gemm.io.mem.c.ready := true.B
   when(gemm.io.mem.c.fire()) {
     printf("write addr %x data %x\n", gemm.io.mem.c.bits.addr, gemm.io.mem.c.bits.data)
   }
-  gemm.io.ctrl_cmd.m := 32.U
-  gemm.io.ctrl_cmd.n := 32.U
-  gemm.io.ctrl_cmd.k := 32.U
+  gemm.io.ctrl_cmd.m := 8.U//32.U
+  gemm.io.ctrl_cmd.n := 8.U//32.U
+  gemm.io.ctrl_cmd.k := 8.U//32.U
 
   gemm.io.ctrl_cmd.a_addr := 0.U
   gemm.io.ctrl_cmd.b_addr := 0.U

@@ -17,7 +17,7 @@ class MainGEMMCmd(addrWidth: Int) extends Bundle {
 }
 
 class MainGEMMMemReadChannel(addrWidth: Int, dataWidth: Int) extends Bundle {
-  val ctrl = Decoupled(UInt(addrWidth.W)) // TODO: may need smarter mem
+  val addr = Decoupled(UInt(addrWidth.W)) // TODO: may need smarter mem
   val data = Flipped(Decoupled(UInt(dataWidth.W)))
 
   override def cloneType = new MainGEMMMemReadChannel(addrWidth, dataWidth).asInstanceOf[this.type]
@@ -41,16 +41,19 @@ class MainGEMMMemIo(addrWidth: Int, indataWidth: Int, outdataWidth: Int) extends
 
 // Note: requires m, n, k to be multiples of bWidth/aPack
 
-class MainGEMM extends Module {
-  val addrWidth = 32 // Width of addresses
+class MainGEMM(aLength: Int = 2048,
+               acHeight: Int = 32,
+               dramWidth: Int = 128,
+               addrWidth: Int = 48) extends Module {
+  //val addrWidth = addressWidth// Width of addresses
   val indataWidth = 16 // Width of input data
   val outdataWidth = 32 // Width of output data
-  val aLength = 2048 // Maximum length of a row of A, max K
+  //val aLength = aLength // Maximum length of a row of A, max K
   val bcLength = 2048 // Maximum length of a row of B/C, very cheap to increase, max N
-  val acHeight = 4//16 // Number of rows of A/C we hold at once
-  val bWidth = 4//16 // Number of elements of B we read in at once, probably should match dramWidth/indataWidth
+  //val acHeight = acHeight//16 // Number of rows of A/C we hold at once
+  val bWidth = dramWidth / indataWidth//8 // Number of elements of B we read in at once, probably should match dramWidth/indataWidth
   val outMaxHeight = 2048 // Maximum number of rows of A/C, very cheap to increase, max M
-  val dramWidth = 64//256 // Width of channel from memory, used to figure out SIMD-esque length
+  //val dramWidth = dramWidth//128 // Width of channel from memory, used to figure out SIMD-esque length
   val aPack = dramWidth / indataWidth // how may elements of a are packed together
   val numCs = acHeight * bWidth * outdataWidth / dramWidth // how many packings of C there are, to write out
   val cpr = bWidth * outdataWidth / dramWidth // how many C packings per row, needed for C addr generation
@@ -138,8 +141,8 @@ class MainGEMM extends Module {
     bReadReady := false.B
     cWriteValid := false.B
 
-    io.mem.a.ctrl.valid := false.B
-    io.mem.b.ctrl.valid := false.B
+    io.mem.a.addr.valid := false.B
+    io.mem.b.addr.valid := false.B
   }
 
   val cmd = Reg(new MainGEMMCmd(addrWidth))
@@ -190,7 +193,7 @@ class MainGEMM extends Module {
       // no halving/quarterig right now
       for (i <- 0 until acHeight) {
         for (j <- 0 until bWidth) {
-          cReg(i)(j) := cReg(i)(j) + (a(i) * b(j))
+          cReg(i)(j) := cReg(i)(j) + (aRead(i) * bRead(j))
         }
       }
       bRowProgress := bRowProgress + 1.U // used for a as well
@@ -280,19 +283,19 @@ class MainGEMM extends Module {
   }
 
   // A address gen
-  io.mem.a.ctrl.bits := aAddr
+  io.mem.a.addr.bits := aAddr
   when(state =/= s_idle) {
-    io.mem.a.ctrl.valid := aAddr < (cmd.a_addr + (cmd.m * cmd.k * (indataWidth / 8).U)) // TODO: memoise?
-    when(io.mem.a.ctrl.fire()) {
+    io.mem.a.addr.valid := aAddr < (cmd.a_addr + (cmd.m * cmd.k * (indataWidth / 8).U)) // TODO: memoise?
+    when(io.mem.a.addr.fire()) {
       aAddr := aAddr + (dramWidth / 8).U // step to next dramWidth-sized chunk. uses fact rows are right after another
     }
   }
 
   // B address gen
-  io.mem.b.ctrl.bits := bAddr
+  io.mem.b.addr.bits := bAddr
   when(state =/= s_idle) { // TODO: state?? should we wait for calc?
-    io.mem.b.ctrl.valid := bAddrCol < cmd.n
-    when(io.mem.b.ctrl.fire()) {
+    io.mem.b.addr.valid := bAddrCol < cmd.n
+    when(io.mem.b.addr.fire()) {
       bAddr := bAddr + cmd.n * (indataWidth / 8).U // step one row down
       bAddrRow := bAddrRow + 1.U
       when(bAddrRow === cmd.k - 1.U) {
