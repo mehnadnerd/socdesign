@@ -76,7 +76,7 @@ class MainGEMM(aLength: Int = 2048,
 
 
   val aStorage = Seq.fill(acHeight) {
-    SyncReadMem(aLength, Vec(aPack, UInt(indataWidth.W)))
+    SyncReadMem(aLength / aPack, Vec(aPack, UInt(indataWidth.W)))
   } // note that multiple elements are packed together
   val aRead = Wire(Vec(acHeight, UInt(indataWidth.W))) // note: this is multiple rows of A
   val aReadValid = Wire(Bool())
@@ -105,9 +105,9 @@ class MainGEMM(aLength: Int = 2048,
   }
 
   val rowProgress = RegInit(0.U(log2Up(outMaxHeight).W)) // progress in terms of how many rows
-  val aProgress = RegInit(0.U(log2Up(aLength).W)) // progress through row
-  val aProgressWire = Wire(UInt(log2Up(aLength).W)) // progress through row
-  aProgressWire := aProgress
+  val aProgress = RegInit(0.U(log2Up(aLength).W)) // progress through row, in terms of elements
+  val aProgressWire = Wire(UInt(log2Up(aLength).W)) // progress through row, in terms of a groups
+  aProgressWire := aProgress / aPack.U
   val aRowProgress = RegInit(0.U(log2Up(acHeight).W)) // progress through the acHeight number of rows
 
   val bRowProgress = RegInit(0.U(log2Up(outMaxHeight).W)) // progress in terms of how many rows of B
@@ -220,6 +220,8 @@ class MainGEMM(aLength: Int = 2048,
         cAddr := cAddr + (dramWidth / 8).U
       }
 
+      bRowProgress := 0.U // done here so a can be ready in time
+
       when(cProgress === (numCs - 1).U) { // done with a colset of B
         bRowProgress := 0.U
         bColProgress := bColProgress + bWidth.U
@@ -276,7 +278,7 @@ class MainGEMM(aLength: Int = 2048,
   aReadValid := false.B
   when(state === s_calc) {
     aReadValid := true.B // always true since we nset bRowProgress and hence aReadAddr a cycle before calc
-    when(bRowProgress % aPack.U === 0.U && aReadReady) {
+    when(bRowProgress % aPack.U === (aPack - 1).U && aReadReady) {
       // at end of aPack group
       aReadAddr := bRowProgress / aPack.U + 1.U
     }

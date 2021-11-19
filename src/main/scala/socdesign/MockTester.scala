@@ -26,9 +26,9 @@ class MockTester extends Module {
   gemm.io.mem.b.data <> bq.io.deq
 
   aq.io.enq <> gemm.io.mem.a.addr
-  aq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.a.addr.bits(15, 0) + i.U } reverse)
+  aq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.a.addr.bits(15, 0) + (i * elemSize / 8).U } reverse)
   bq.io.enq <> gemm.io.mem.b.addr
-  bq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.b.addr.bits(15, 0) + i.U } reverse)
+  bq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.b.addr.bits(15, 0) + (i * elemSize / 8).U } reverse)
 
   gemm.io.mem.c.ready := true.B
   when(gemm.io.mem.c.fire()) {
