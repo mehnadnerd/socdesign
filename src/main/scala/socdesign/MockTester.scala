@@ -10,7 +10,7 @@ class MockTester extends Module {
     val done = Output(Bool())
   })
 
-  val gemm = Module(new MainGEMM(dramWidth = 64, acHeight = 4, aLength = 16))
+  val gemm = Module(new MainGEMM(dramWidth = 64, acHeight = 4, aLength = 16, addrWidth = 16))
 
   gemm.io.ctrl_start := io.start
   io.done := gemm.io.ctrl_finished

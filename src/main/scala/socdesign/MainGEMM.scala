@@ -248,10 +248,6 @@ class MainGEMM(aLength: Int = 2048,
 
           state := s_reload_a
 
-          bAddr := cmd.b_addr
-          bAddrRow := 0.U
-          bAddrCol := 0.U
-
           when(rowProgress === cmd.m - acHeight.U) { // done done
             state := s_finish
           }
@@ -297,17 +293,21 @@ class MainGEMM(aLength: Int = 2048,
   io.mem.b.addr.bits := bAddr
   when(state =/= s_idle) { // TODO: state?? should we wait for calc?
     io.mem.b.addr.valid := bAddrCol < cmd.n
-    when(io.mem.b.addr.fire()) {
+    when(io.mem.b.addr.fire()) { // next set of B
       bAddr := bAddr + cmd.n * (indataWidth / 8).U // step one row down
       bAddrRow := bAddrRow + 1.U
-      when(bAddrRow === cmd.k - 1.U) {
+      when(bAddrRow === cmd.k - 1.U) { // at bottom, so ext column of B
         bAddr := bAddr + (bWidth * indataWidth / 8).U - ((cmd.k - 1.U) * cmd.n * (indataWidth / 8).U) // step 1 element over, then k rows ups
         bAddrRow := 0.U
-        bAddrCol := bAddrCol + 1.U
+        bAddrCol := bAddrCol + bWidth.U
+        when(bAddrCol === cmd.n - bWidth.U && (rowProgress =/= cmd.m - acHeight.U)) {
+          // the second check is so we do't try to read when done
+          // at bottom right, reset to beginning
+          bAddr := cmd.b_addr
+          bAddrRow := 0.U
+          bAddrCol := 0.U
+        }
       }
     }
   }
-
-  // TODO: check c address generation
-
 }
