@@ -221,7 +221,7 @@ class MainGEMM extends Module {
         bRowProgress := 0.U
         bColProgress := bColProgress + bWidth.U
 
-        cAddr := cAddr - cmd.n * ((acHeight - 1) * dramWidth / 8).U + (dramWidth / 8).U
+        cAddr := cAddr - cmd.n * ((acHeight - 1) * outdataWidth / 8).U + (dramWidth / 8).U
 
         cReg.foreach { //  zero entirety of C
           _.foreach {
@@ -236,7 +236,7 @@ class MainGEMM extends Module {
           bRowProgress := 0.U
           bColProgress := 0.U
 
-          cAddr := cAddr - cmd.n * (cmd.m - 1.U) * (dramWidth / 8).U + (dramWidth / 8).U
+          cAddr := cAddr + (dramWidth / 8).U
 
           aProgress := 0.U
           aRowProgress := 0.U
