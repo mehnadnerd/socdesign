@@ -10,7 +10,7 @@ class MockTester extends Module {
     val done = Output(Bool())
   })
 
-  val gemm = Module(new MainGEMM(dramWidth = 64, acHeight = 4, aLength = 16, addrWidth = 16))
+  val gemm = Module(new MainGEMM(dramWidth = 128, acHeight = 32, aLength = 2048, addrWidth = 48))
 
   gemm.io.ctrl_start := io.start
   io.done := gemm.io.ctrl_finished
@@ -34,9 +34,9 @@ class MockTester extends Module {
   when(gemm.io.mem.c.fire()) {
     printf("write addr %x data %x\n", gemm.io.mem.c.bits.addr, gemm.io.mem.c.bits.data)
   }
-  gemm.io.ctrl_cmd.m := 8.U//32.U
-  gemm.io.ctrl_cmd.n := 8.U//32.U
-  gemm.io.ctrl_cmd.k := 8.U//32.U
+  gemm.io.ctrl_cmd.m := 128.U
+  gemm.io.ctrl_cmd.n := 32.U
+  gemm.io.ctrl_cmd.k := 32.U
 
   gemm.io.ctrl_cmd.a_addr := 0.U
   gemm.io.ctrl_cmd.b_addr := 0.U

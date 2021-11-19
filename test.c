@@ -35,8 +35,8 @@ int main() {
         }
     }
     for (int i = 0; i < M; ++i) {
-        for (int j = 0; j < N; ++j) {
-            printf("%04x %08x\n", (i * N + j) * sizeof(outtype), C[i][j]);
+        for (int j = 0; j < N; j+=2) {
+            printf("%04lx %016llx\n", (i * N + j) * sizeof(outtype), ((uint64_t)C[i][j + 1] << 32) | ((uint64_t)C[i][j] << 0));
         }
     }
 
