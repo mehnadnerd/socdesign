@@ -30,9 +30,10 @@ class MockTester extends Module {
   bq.io.enq <> gemm.io.mem.b.addr
   bq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.b.addr.bits(15, 0) + (i * elemSize / 8).U } reverse)
 
-  gemm.io.mem.c.ready := true.B
-  when(gemm.io.mem.c.fire()) {
-    printf("write addr %x data %x\n", gemm.io.mem.c.bits.addr, gemm.io.mem.c.bits.data)
+  gemm.io.mem.c.data.ready := gemm.io.mem.c.addr.valid
+  gemm.io.mem.c.addr.ready := gemm.io.mem.c.data.valid
+  when(gemm.io.mem.c.addr.fire()) {
+    printf("write addr %x data %x\n", gemm.io.mem.c.addr.bits, gemm.io.mem.c.data.bits)
   }
   gemm.io.ctrl_cmd.m := 128.U
   gemm.io.ctrl_cmd.n := 32.U

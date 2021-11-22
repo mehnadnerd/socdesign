@@ -23,17 +23,17 @@ class MainGEMMMemReadChannel(addrWidth: Int, dataWidth: Int) extends Bundle {
   override def cloneType = new MainGEMMMemReadChannel(addrWidth, dataWidth).asInstanceOf[this.type]
 }
 
-class AddrDataBundle(addrWidth: Int, dataWidth: Int) extends Bundle {
-  val addr = UInt(addrWidth.W)
-  val data = UInt(dataWidth.W)
+class MainGEMMMemWriteChannel(addrWidth: Int, dataWidth: Int) extends Bundle {
+  val addr = Decoupled(UInt(addrWidth.W))
+  val data = Decoupled(UInt(dataWidth.W))
 
-  override def cloneType = new AddrDataBundle(addrWidth, dataWidth).asInstanceOf[this.type]
+  override def cloneType = new MainGEMMMemWriteChannel(addrWidth, dataWidth).asInstanceOf[this.type]
 }
 
 class MainGEMMMemIo(addrWidth: Int, indataWidth: Int, outdataWidth: Int) extends Bundle {
   val a = new MainGEMMMemReadChannel(addrWidth, indataWidth)
   val b = new MainGEMMMemReadChannel(addrWidth, indataWidth)
-  val c = Decoupled(new AddrDataBundle(addrWidth, outdataWidth))
+  val c = new MainGEMMMemWriteChannel(addrWidth, outdataWidth)
 
   override def cloneType = new MainGEMMMemIo(addrWidth, indataWidth, outdataWidth).asInstanceOf[this.type]
 
@@ -44,7 +44,7 @@ class MainGEMMMemIo(addrWidth: Int, indataWidth: Int, outdataWidth: Int) extends
 class MainGEMM(aLength: Int = 2048,
                acHeight: Int = 32,
                dramWidth: Int = 128,
-               addrWidth: Int = 48) extends Module {
+               addrWidth: Int = 49) extends Module {
   //val addrWidth = addressWidth// Width of addresses
   val indataWidth = 16 // Width of input data
   val outdataWidth = 32 // Width of output data
@@ -93,9 +93,10 @@ class MainGEMM(aLength: Int = 2048,
     bReadValid := io.mem.b.data.valid
     io.mem.b.data.ready := bReadReady
 
-    io.mem.c.bits.data := cWrite
-    cWriteReady := io.mem.c.ready
-    io.mem.c.valid := cWriteValid
+    io.mem.c.data.bits := cWrite
+    cWriteReady := io.mem.c.addr.ready && io.mem.c.data.ready // n.b. if writevalid was more complicated, this could lead to combinaitional loops
+    io.mem.c.addr.valid := cWriteValid
+    io.mem.c.data.valid := cWriteValid
   }
 
   val cReg = Seq.fill(acHeight) {
@@ -119,7 +120,7 @@ class MainGEMM(aLength: Int = 2048,
   val bAddrRow = RegInit(0.U(log2Up(outMaxHeight).W))
   val bAddrCol = RegInit(0.U(log2Up(bcLength).W))
   val cAddr = Reg(UInt(addrWidth.W))
-  io.mem.c.bits.addr := cAddr
+  io.mem.c.addr.bits := cAddr
 
   val s_idle :: s_reload_a :: s_calc :: s_out :: s_finish :: Nil = Enum(5)
   val state = RegInit(s_idle)
