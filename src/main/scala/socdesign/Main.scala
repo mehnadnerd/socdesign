@@ -7,6 +7,10 @@ object Main extends App {
   (new chisel3.stage.ChiselStage).emitVerilog(new MainGEMM())
 }
 
+object Wrapped extends App {
+  (new chisel3.stage.ChiselStage).emitVerilog(new GEMM())
+}
+
 object FirrtlMain extends App {
   (new chisel3.stage.ChiselStage).emitFirrtl(new MainGEMM())
 }
