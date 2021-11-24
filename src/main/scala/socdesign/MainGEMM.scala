@@ -269,6 +269,8 @@ class MainGEMM(aLength: Int = 2048,
   val aReadRaw = aStorage.map { a => a.read(aReadAddr) }
   aReadAddr := bRowProgress / aPack.U
   val aReadElem = bRowProgress % aPack.U
+  // This is correct because bRowProgress is the number of rows done so far.
+  // this meas the aReadAddr is kinnd of behind, but the below stuff for incrementing at the end of the group fixes it
 
   aReadRaw.zipWithIndex.foreach { case (a, i) => aRead(i) := a(aReadElem) }
 
@@ -287,6 +289,7 @@ class MainGEMM(aLength: Int = 2048,
     io.mem.a.addr.valid := aAddr < (cmd.a_addr + (cmd.m * cmd.k * (indataWidth / 8).U)) // TODO: memoise?
     when(io.mem.a.addr.fire()) {
       aAddr := aAddr + (dramWidth / 8).U // step to next dramWidth-sized chunk. uses fact rows are right after another
+      // TODO: this is the critical path
     }
   }
 
@@ -299,6 +302,7 @@ class MainGEMM(aLength: Int = 2048,
       bAddrRow := bAddrRow + 1.U
       when(bAddrRow === cmd.k - 1.U) { // at bottom, so ext column of B
         bAddr := bAddr + (bWidth * indataWidth / 8).U - ((cmd.k - 1.U) * cmd.n * (indataWidth / 8).U) // step 1 element over, then k rows ups
+        // TODO: secod most critical path, could be memoised
         bAddrRow := 0.U
         bAddrCol := bAddrCol + bWidth.U
         when(bAddrCol === cmd.n - bWidth.U && (rowProgress =/= cmd.m - acHeight.U)) {
