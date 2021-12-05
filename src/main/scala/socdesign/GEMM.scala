@@ -17,7 +17,7 @@ class GEMM(aLength: Int = 2048,
                acHeight: Int = 32,
                dramWidth: Int = 128,
                addrWidth: Int = 49,
-           baseAddr: BigInt = 0) extends Module {
+           addrMask: Int = 0xff) extends Module {
   val io = IO(new Bundle {
     val ctrl = new GEMMCtrlChannel(addrWidth)
     val mem = new MainGEMMMemIo(addrWidth, dramWidth, dramWidth)
@@ -70,7 +70,7 @@ class GEMM(aLength: Int = 2048,
     wdcValid := true.B
   }
 
-  val wcmdaddr = waddrCache - baseAddr.U
+  val wcmdaddr = waddrCache & addrMask.U
 
   when (wacValid && wdcValid && !wrPending) {
     wacValid := false.B
