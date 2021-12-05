@@ -7,9 +7,13 @@ class GEMMCtrlChannel(addrWidth: Int) extends Bundle {
   val waddr = Flipped(Decoupled(UInt(addrWidth.W)))
   val wdata = Flipped(Decoupled(UInt(addrWidth.W)))
   val wresp = Decoupled()
+  val wid = UInt(16.W)
+  val bid = Flipped(UInt(16.W))
 
   val raddr = Flipped(Decoupled(UInt(addrWidth.W)))
   val rdata = Decoupled(UInt(addrWidth.W))
+  val arid = UInt(16.W)
+  val rid = Flipped(UInt(16.W))
   override def cloneType = new GEMMCtrlChannel(addrWidth).asInstanceOf[this.type]
 }
 
@@ -34,7 +38,7 @@ class GEMM(aLength: Int = 2048,
   val b_addr = RegInit(0.U(addrWidth.W))
   val c_addr = RegInit(0.U(addrWidth.W))
 
-  val regs = VecInit(m, n, k, a_addr, b_addr, c_addr)
+  //val regs = VecInit(m, n, k, a_addr, b_addr, c_addr)
 
   gemm.io.ctrl_cmd.m := m
   gemm.io.ctrl_cmd.n := n
@@ -57,11 +61,14 @@ class GEMM(aLength: Int = 2048,
   val wdcValid = RegInit(false.B)
   val wrPending = RegInit(false.B)
   // I could probably do things to make this like a cycle faster but idk enough
+  val wid = RegInit(0.U(16.W))
+  io.ctrl.bid := wid
 
   io.ctrl.waddr.ready := !wacValid
   when (io.ctrl.waddr.valid) {
     waddrCache := io.ctrl.waddr.bits
     wacValid := true.B
+    wid := io.ctrl.wid
   }
 
   io.ctrl.wdata.ready := !wdcValid
@@ -107,6 +114,9 @@ class GEMM(aLength: Int = 2048,
   val raddrCache = RegInit(0.U(addrWidth.W))
   val racValid = RegInit(false.B)
 
+  val arid = RegInit(0.U(16.W))
+  io.ctrl.rid := arid
+
   val rPending = RegInit(false.B)
   val rResult  = RegInit(false.B)
 
@@ -114,6 +124,7 @@ class GEMM(aLength: Int = 2048,
   when (io.ctrl.raddr.valid) {
     raddrCache := io.ctrl.raddr.bits
     racValid := true.B
+    arid := io.ctrl.arid
   }
 
   when (racValid) {
