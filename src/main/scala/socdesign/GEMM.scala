@@ -87,22 +87,22 @@ class GEMM(aLength: Int = 2048,
     when (wcmdaddr === 0.U) { // start
       gemm.io.ctrl_start := true.B
     }
-    when (wcmdaddr === 4.U) { // m
+    when (wcmdaddr === 8.U) { // m
       m := wdataCache
     }
-    when (wcmdaddr === 8.U) { // n
+    when (wcmdaddr === 16.U) { // n
       n := wdataCache
     }
-    when (wcmdaddr === 12.U) { // k
+    when (wcmdaddr === 24.U) { // k
       k := wdataCache
     }
-    when (wcmdaddr === 16.U) { // a_addr
+    when (wcmdaddr === 32.U) { // a_addr
       a_addr := wdataCache
     }
-    when (wcmdaddr === 20.U) { // b_addr
+    when (wcmdaddr === 40.U) { // b_addr
       b_addr := wdataCache
     }
-    when (wcmdaddr === 24.U) { // c_addr
+    when (wcmdaddr === 48.U) { // c_addr
       c_addr := wdataCache
     }
   }
