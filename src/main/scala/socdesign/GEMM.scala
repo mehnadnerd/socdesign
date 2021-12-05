@@ -7,13 +7,13 @@ class GEMMCtrlChannel(addrWidth: Int) extends Bundle {
   val waddr = Flipped(Decoupled(UInt(addrWidth.W)))
   val wdata = Flipped(Decoupled(UInt(addrWidth.W)))
   val wresp = Decoupled()
-  val wid = UInt(16.W)
-  val bid = Flipped(UInt(16.W))
+  val wid = Input(UInt(16.W))
+  val bid = Output(UInt(16.W))
 
   val raddr = Flipped(Decoupled(UInt(addrWidth.W)))
   val rdata = Decoupled(UInt(addrWidth.W))
-  val arid = UInt(16.W)
-  val rid = Flipped(UInt(16.W))
+  val arid = Input(UInt(16.W))
+  val rid = Output(UInt(16.W))
   override def cloneType = new GEMMCtrlChannel(addrWidth).asInstanceOf[this.type]
 }
 
