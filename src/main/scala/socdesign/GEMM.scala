@@ -65,14 +65,14 @@ class GEMM(aLength: Int = 2048,
   io.ctrl.bid := wid
 
   io.ctrl.waddr.ready := !wacValid
-  when (io.ctrl.waddr.valid) {
+  when (io.ctrl.waddr.valid && !wacValid) {
     waddrCache := io.ctrl.waddr.bits
     wacValid := true.B
     wid := io.ctrl.wid
   }
 
   io.ctrl.wdata.ready := !wdcValid
-  when (io.ctrl.wdata.valid) {
+  when (io.ctrl.wdata.valid && !wdcValid) {
     wdataCache := io.ctrl.wdata.bits
     wdcValid := true.B
   }
@@ -121,7 +121,7 @@ class GEMM(aLength: Int = 2048,
   val rResult  = RegInit(false.B)
 
   io.ctrl.raddr.ready := !racValid && !rPending
-  when (io.ctrl.raddr.valid) {
+  when (io.ctrl.raddr.valid && !racValid) {
     raddrCache := io.ctrl.raddr.bits
     racValid := true.B
     arid := io.ctrl.arid
