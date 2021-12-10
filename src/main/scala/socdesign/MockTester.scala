@@ -3,6 +3,7 @@ package socdesign
 import chisel3._
 import chisel3.util.Queue
 import chisel3.util.Cat
+import chisel3.util.Counter
 
 class MockTester extends Module {
   val io = IO(new Bundle {
@@ -30,12 +31,18 @@ class MockTester extends Module {
   bq.io.enq <> gemm.io.mem.b.addr
   bq.io.enq.bits := Cat((0 until elemPack) map { i => gemm.io.mem.b.addr.bits(15, 0) + (i * elemSize / 8).U } reverse)
 
-  gemm.io.mem.c.data.ready := gemm.io.mem.c.addr.valid
-  gemm.io.mem.c.addr.ready := gemm.io.mem.c.data.valid
+  val c = Counter(3)
+  val c2 = Counter(2)
+
+  c.inc()
+  c2.inc()
+
+  gemm.io.mem.c.data.ready := gemm.io.mem.c.addr.valid && (c.value === 0.U)
+  gemm.io.mem.c.addr.ready := gemm.io.mem.c.data.valid && (c.value === 0.U)
   when(gemm.io.mem.c.addr.fire()) {
     printf("write addr %x data %x\n", gemm.io.mem.c.addr.bits, gemm.io.mem.c.data.bits)
   }
-  gemm.io.ctrl_cmd.m := 128.U
+  gemm.io.ctrl_cmd.m := 32.U
   gemm.io.ctrl_cmd.n := 32.U
   gemm.io.ctrl_cmd.k := 32.U
 

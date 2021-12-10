@@ -3,7 +3,7 @@
 package socdesign
 
 import chisel3._
-import chisel3.util.{Decoupled, DecoupledIO, Enum, ReadyValidIO, log2Up, Cat}
+import chisel3.util.{Cat, Decoupled, DecoupledIO, Enum, Queue, ReadyValidIO, log2Up}
 
 class MainGEMMCmd(addrWidth: Int) extends Bundle {
   val a_addr = UInt(addrWidth.W)
@@ -88,15 +88,20 @@ class MainGEMM(aLength: Int = 2048,
   val cWriteValid = Wire(Bool())
   val cWriteReady = Wire(Bool())
 
+  val caq = Module(new Queue(UInt(addrWidth.W), 2, flow = false))
+  val cdq = Module(new Queue(UInt(dramWidth.W), 2, flow = false))
+  io.mem.c.addr <> caq.io.deq
+  io.mem.c.data <> cdq.io.deq
+
   {
     bRead := b
     bReadValid := io.mem.b.data.valid
     io.mem.b.data.ready := bReadReady
 
-    io.mem.c.data.bits := cWrite
-    cWriteReady := io.mem.c.addr.ready && io.mem.c.data.ready // n.b. if writevalid was more complicated, this could lead to combinaitional loops
-    io.mem.c.addr.valid := cWriteValid
-    io.mem.c.data.valid := cWriteValid
+    cdq.io.enq.bits := cWrite
+    cWriteReady := caq.io.enq.ready && cdq.io.enq.ready
+    caq.io.enq.valid := cdq.io.enq.ready && cWriteValid
+    cdq.io.enq.valid := caq.io.enq.ready && cWriteValid
   }
 
   val cReg = Seq.fill(acHeight) {
@@ -120,9 +125,9 @@ class MainGEMM(aLength: Int = 2048,
   val bAddrRow = RegInit(0.U(log2Up(outMaxHeight).W))
   val bAddrCol = RegInit(0.U(log2Up(bcLength).W))
   val cAddr = Reg(UInt(addrWidth.W))
-  io.mem.c.addr.bits := cAddr
+  caq.io.enq.bits := cAddr
 
-  val s_idle :: s_reload_a :: s_calc :: s_out :: s_finish :: Nil = Enum(5)
+  val s_idle :: s_reload_a :: s_calc :: s_out :: s_finish :: s_done :: Nil = Enum(6)
   val state = RegInit(s_idle)
 
   /*
@@ -131,7 +136,8 @@ class MainGEMM(aLength: Int = 2048,
    * s_reload_a: load a new rowset of a, goes to s_calc when rowset loaded
    * s_calc: stream in a colset of b, accumulate/mul in c reg, goes to s_out at end of col
    * s_out: write out c, goes back to s_calc when written out, s_finish if done all
-   * s_finish: send response, go to s_idle
+   * s_finish: drain queue
+   * s_done: send done
    */
 
   // Defaults
@@ -258,6 +264,12 @@ class MainGEMM(aLength: Int = 2048,
   }
 
   when(state === s_finish) {
+    when (caq.io.count === 0.U && cdq.io.count === 0.U) {
+      state := s_done
+    }
+  }
+
+  when (state === s_done) {
     io.ctrl_finished := true.B
     state := s_idle
   }
