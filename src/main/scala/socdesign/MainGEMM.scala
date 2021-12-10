@@ -103,6 +103,7 @@ class MainGEMM(aLength: Int = 2048,
     caddrq.io.enq.valid := cdataq.io.enq.ready && cWriteValid
     cdataq.io.enq.valid := caddrq.io.enq.ready && cWriteValid
   }
+  assert(caddrq.io.enq.fire() === cdataq.io.enq.fire())
 
   val cReg = Seq.fill(acHeight) {
     Seq.fill(bWidth) {
