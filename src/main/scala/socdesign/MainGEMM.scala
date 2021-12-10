@@ -88,20 +88,20 @@ class MainGEMM(aLength: Int = 2048,
   val cWriteValid = Wire(Bool())
   val cWriteReady = Wire(Bool())
 
-  val caq = Module(new Queue(UInt(addrWidth.W), 2, flow = false))
-  val cdq = Module(new Queue(UInt(dramWidth.W), 2, flow = false))
-  io.mem.c.addr <> caq.io.deq
-  io.mem.c.data <> cdq.io.deq
+  val caddrq = Module(new Queue(UInt(addrWidth.W), 2, flow = false))
+  val cdataq = Module(new Queue(UInt(dramWidth.W), 2, flow = false))
+  io.mem.c.addr <> caddrq.io.deq
+  io.mem.c.data <> cdataq.io.deq
 
   {
     bRead := b
     bReadValid := io.mem.b.data.valid
     io.mem.b.data.ready := bReadReady
 
-    cdq.io.enq.bits := cWrite
-    cWriteReady := caq.io.enq.ready && cdq.io.enq.ready
-    caq.io.enq.valid := cdq.io.enq.ready && cWriteValid
-    cdq.io.enq.valid := caq.io.enq.ready && cWriteValid
+    cdataq.io.enq.bits := cWrite
+    cWriteReady := caddrq.io.enq.ready && cdataq.io.enq.ready
+    caddrq.io.enq.valid := cdataq.io.enq.ready && cWriteValid
+    cdataq.io.enq.valid := caddrq.io.enq.ready && cWriteValid
   }
 
   val cReg = Seq.fill(acHeight) {
@@ -125,7 +125,7 @@ class MainGEMM(aLength: Int = 2048,
   val bAddrRow = RegInit(0.U(log2Up(outMaxHeight).W))
   val bAddrCol = RegInit(0.U(log2Up(bcLength).W))
   val cAddr = Reg(UInt(addrWidth.W))
-  caq.io.enq.bits := cAddr
+  caddrq.io.enq.bits := cAddr
 
   val s_idle :: s_reload_a :: s_calc :: s_out :: s_finish :: s_done :: Nil = Enum(6)
   val state = RegInit(s_idle)
@@ -264,7 +264,7 @@ class MainGEMM(aLength: Int = 2048,
   }
 
   when(state === s_finish) {
-    when (caq.io.count === 0.U && cdq.io.count === 0.U) {
+    when (caddrq.io.count === 0.U && cdataq.io.count === 0.U) {
       state := s_done
     }
   }
