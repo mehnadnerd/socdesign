@@ -281,7 +281,7 @@ always @(posedge ACLK) begin
                     rdata <= int_k[31:0];
                 end
                 ADDR_MAGIC: begin
-                    rdata <= 32'h3;
+                    rdata <= 32'h5;
                 end
             endcase
         end
