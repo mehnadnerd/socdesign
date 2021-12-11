@@ -44,7 +44,8 @@ class MainGEMMMemIo(addrWidth: Int, indataWidth: Int, outdataWidth: Int) extends
 class MainGEMM(aLength: Int = 2048,
                acHeight: Int = 32,
                dramWidth: Int = 128,
-               addrWidth: Int = 49) extends Module {
+               addrWidth: Int = 49,
+               debug: Boolean = false) extends Module {
   //val addrWidth = addressWidth// Width of addresses
   val indataWidth = 16 // Width of input data
   val outdataWidth = 32 // Width of output data
@@ -204,12 +205,14 @@ class MainGEMM(aLength: Int = 2048,
           cReg(i)(j) := cReg(i)(j) + (aRead(i) * bRead(j))
         }
       }
+      if (debug) {
+        printf("cReg %x a %x b %x; bRow %x\n", cReg(0)(0), aRead(0), bRead(0), bRowProgress)
+      }
       bRowProgress := bRowProgress + 1.U // used for a as well
-    }
-
-    when(bRowProgress === cmd.k - 1.U) {
-      state := s_out
-      cProgress := 0.U
+      when(bRowProgress === cmd.k - 1.U) {
+        state := s_out
+        cProgress := 0.U
+      }
     }
   }
 
